@@ -1,0 +1,71 @@
+name: Real Arm64 benchmark
+
+# Runs the REAL (non-mock) Armada benchmark on a free GitHub-hosted Arm64 runner
+# (ubuntu-24.04-arm = 4 vCPU Cobalt 100, Arm Neoverse). It builds llama.cpp, downloads a small
+# tool-calling GGUF, serves it, and runs the agent fleet — producing genuine Arm numbers with
+# no cloud signup. Trigger it manually from the Actions tab ("Run workflow").
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_repo:
+        description: "Hugging Face GGUF repo"
+        default: "Qwen/Qwen2.5-3B-Instruct-GGUF"
+      model_file:
+        description: "GGUF filename"
+        default: "qwen2.5-3b-instruct-q4_0.gguf"
+      concurrency:
+        description: "Agent fleet size (concurrent agents)"
+        default: "3"
+
+jobs:
+  real-bench:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+
+      - name: Install Armada
+        run: pip install -e .
+
+      - name: Show detected CPU / Arm features
+        run: armada info
+
+      - name: Build llama.cpp (KleidiAI on Arm)
+        run: ./scripts/build_llama_cpp.sh
+
+      - name: Download model
+        env:
+          MODEL_REPO: ${{ inputs.model_repo }}
+          MODEL_FILE: ${{ inputs.model_file }}
+        run: ./scripts/download_model.sh
+
+      - name: Run the real agent fleet benchmark
+        run: |
+          armada bench \
+            --config configs/default.yaml \
+            --set run.concurrency=${{ inputs.concurrency }} \
+            --set server.parallel=${{ inputs.concurrency }} \
+            --set cost.instance_label="GitHub ubuntu-24.04-arm (Cobalt 100, 4 vCPU)" \
+            --out results/real-arm
+
+      - name: Publish report to the job summary
+        if: always()
+        run: |
+          if [ -f results/real-arm/report.md ]; then
+            cat results/real-arm/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: armada-real-arm
+          path: results/real-arm
