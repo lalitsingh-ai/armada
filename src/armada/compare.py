@@ -87,6 +87,106 @@ def _headline(items: list[Item]) -> str | None:
     return f"**Headline:** `{faster}` delivers **{ratio:.2f}x the throughput** of `{slower}`."
 
 
+def _xml_escape(text: object) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _mermaid_bar(title: str, labels: list[str], values: list[float], y_label: str) -> str:
+    xs = ", ".join(f'"{label.replace(chr(34), chr(39))}"' for label in labels)
+    ys = ", ".join(f"{v:.2f}" for v in values)
+    return (
+        "```mermaid\n"
+        "xychart-beta\n"
+        f'    title "{title.replace(chr(34), chr(39))}"\n'
+        f"    x-axis [{xs}]\n"
+        f'    y-axis "{y_label}"\n'
+        f"    bar [{ys}]\n"
+        "```"
+    )
+
+
+def render_compare_mermaid(items: list[Item]) -> str:
+    """Mermaid bar charts (render natively on GitHub + in Actions job summaries)."""
+    labels = [label for label, _ in items]
+    charts = [
+        _mermaid_bar(
+            "Throughput (tasks/s) — higher is better",
+            labels,
+            [float(d.get("tasks_per_sec") or 0.0) for _, d in items],
+            "tasks/s",
+        )
+    ]
+    tpd = [d.get("tasks_per_dollar") for _, d in items]
+    if any(v is not None for v in tpd):
+        charts.append(
+            _mermaid_bar(
+                "Tasks per dollar — higher is better",
+                labels,
+                [float(v or 0.0) for v in tpd],
+                "tasks/$",
+            )
+        )
+    return "\n\n".join(charts)
+
+
+def render_compare_svg(
+    items: list[Item],
+    metric: str = "tasks_per_sec",
+    title: str = "Throughput (tasks/s) — higher is better",
+    unit: str = "tasks/s",
+) -> str:
+    """A dependency-free horizontal bar chart (for slides / Devpost). Best bar is highlighted."""
+    labels = [str(label) for label, _ in items]
+    values = [float(d.get(metric) or 0.0) for _, d in items]
+    n = len(values)
+    vmax = max(values) if values and max(values) > 0 else 1.0
+
+    pad_l, pad_r, pad_t, pad_b = 180, 80, 52, 18
+    bar_h, gap, plot_w = 30, 16, 440
+    width = pad_l + plot_w + pad_r
+    height = pad_t + n * bar_h + max(n - 1, 0) * gap + pad_b
+    best = max(range(n), key=lambda i: values[i]) if n else -1
+
+    rows: list[str] = []
+    y = pad_t
+    for i, (label, val) in enumerate(zip(labels, values)):
+        w = max(1.0, val / vmax * plot_w)
+        color = "#2da44e" if i == best else "#8b949e"
+        mid = y + bar_h / 2 + 4
+        rows.append(
+            f'<text x="{pad_l - 10}" y="{mid:.0f}" text-anchor="end" font-size="13" '
+            f'fill="#c9d1d9">{_xml_escape(label)}</text>'
+        )
+        rows.append(
+            f'<rect x="{pad_l}" y="{y}" width="{w:.1f}" height="{bar_h}" rx="3" fill="{color}"/>'
+        )
+        rows.append(
+            f'<text x="{pad_l + w + 8:.1f}" y="{mid:.0f}" font-size="13" '
+            f'fill="#c9d1d9">{val:,.2f}</text>'
+        )
+        y += bar_h + gap
+
+    body = "\n  ".join(rows)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" '
+        f'font-family="system-ui,Segoe UI,Helvetica,Arial,sans-serif">\n'
+        f'  <rect width="{width}" height="{height}" fill="#0d1117"/>\n'
+        f'  <text x="{pad_l}" y="30" font-size="16" font-weight="700" '
+        f'fill="#e6edf3">{_xml_escape(title)}</text>\n'
+        f'  <text x="{width - pad_r}" y="30" text-anchor="end" font-size="12" '
+        f'fill="#8b949e">{_xml_escape(unit)}</text>\n'
+        f"  {body}\n"
+        f"</svg>\n"
+    )
+
+
 def render_compare_console(items: list[Item], console: Console | None = None,
                            title: str = "Comparison") -> None:
     console = console or Console()
@@ -127,5 +227,13 @@ def write_compare(items: list[Item], out_dir: str | Path, title: str = "Comparis
     ]
     payload = {"title": title, "variants": summary}
     (out / "compare.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    (out / "compare.md").write_text(render_compare_markdown(items, title), encoding="utf-8")
+
+    markdown = (
+        render_compare_markdown(items, title)
+        + "\n## Charts\n\n"
+        + render_compare_mermaid(items)
+        + "\n"
+    )
+    (out / "compare.md").write_text(markdown, encoding="utf-8")
+    (out / "compare.svg").write_text(render_compare_svg(items), encoding="utf-8")
     return out

@@ -4,6 +4,8 @@ from armada.client import MockClient
 from armada.compare import (
     make_variants,
     render_compare_markdown,
+    render_compare_mermaid,
+    render_compare_svg,
     write_compare,
 )
 from armada.config import Config
@@ -65,6 +67,7 @@ def test_write_compare_emits_files(tmp_path):
     out = write_compare(items, tmp_path / "cmp", title="cache sweep")
     assert (out / "compare.json").is_file()
     assert (out / "compare.md").is_file()
+    assert (out / "compare.svg").is_file()
 
     import json
 
@@ -73,3 +76,20 @@ def test_write_compare_emits_files(tmp_path):
     assert [v["label"] for v in payload["variants"]] == ["cache-on", "cache-off"]
     # the heavy per-task list is stripped from the comparison summary
     assert all("tasks" not in v for v in payload["variants"])
+    # charts are embedded in the published markdown
+    assert "```mermaid" in (out / "compare.md").read_text()
+
+
+def test_mermaid_chart_is_wellformed():
+    md = render_compare_mermaid(_sweep("cache"))
+    assert "xychart-beta" in md
+    assert '"cache-on"' in md and '"cache-off"' in md
+    assert "tasks/s" in md
+
+
+def test_svg_chart_is_wellformed():
+    svg = render_compare_svg(_sweep("cache"))
+    assert svg.startswith("<svg") and svg.strip().endswith("</svg>")
+    assert "<rect" in svg
+    # the winning bar is highlighted green
+    assert "#2da44e" in svg
