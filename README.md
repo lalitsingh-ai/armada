@@ -83,6 +83,12 @@ armada bench --config configs/default.yaml --mock --out results/mock
 
 # Render the report
 armada report results/mock
+
+# Sweep prefix-cache ON vs OFF and auto-generate the comparison + headline
+armada sweep --kind cache --mock --set cost.usd_per_hour=0.05 --out results/sweep
+
+# Compare any two saved runs side by side (e.g. Arm vs x86)
+armada compare results/arm results/x86 --labels "Arm64,x86-64" --title "Arm vs x86"
 ```
 
 This validates the whole pipeline (agent loop, tool calls, metrics, cost model, report) without a
@@ -90,13 +96,14 @@ GPU, a model, or even an Arm chip.
 
 ## Running on Arm64 (the real benchmark)
 
-Recommended free Arm64 environments:
+Recommended Arm64 environments:
 
 | Environment | Notes |
 |---|---|
-| **Oracle Cloud Always Free — Ampere A1** | 4 OCPU / 24 GB, Neoverse-N1. Free forever. Best for concurrency runs. |
-| **GitHub Actions `ubuntu-24.04-arm`** | Free for public repos. Reproducible CI benchmarks (see below). |
+| **GitHub Actions `ubuntu-24.04-arm`** | Free for public repos, zero signup — 4 vCPU Cobalt 100 (Arm Neoverse N2). Reproducible CI benchmarks (see below). |
+| **Hetzner CAX31 / CAX41** | Ampere Altra (Neoverse N1), hourly billing (~pennies/hr). Easiest dedicated box for bigger concurrency runs. |
 | **AWS Graviton4 / Google Axion / Azure Cobalt** | For a hyperscaler Arm-vs-x86 chart (free trial credits). |
+| **Oracle Cloud Always Free — Ampere A1** | 4 OCPU / 24 GB, Neoverse-N1, free forever (signup availability varies by region). |
 
 ```bash
 # 1. Build llama.cpp tuned for this host's Arm features
@@ -112,9 +119,15 @@ armada report results/arm
 
 ## Reproduce it for free in CI
 
-Every push runs the benchmark on a **free Arm64 runner** and posts the report to the workflow
-summary — fork the repo and you get your own Arm benchmark with zero setup. See
+Every push runs the benchmark on a **free Arm64 runner** (4 vCPU Cobalt 100 / Arm Neoverse) plus an
+x86 runner, posts the report and a **prefix-cache ON/OFF comparison** to the workflow summary, and
+uploads the results — fork the repo and you get your own Arm benchmark with zero setup. See
 [`.github/workflows/benchmark-arm.yml`](.github/workflows/benchmark-arm.yml).
+
+For **real** numbers (llama.cpp serving an actual model), trigger the manual
+[`.github/workflows/benchmark-real-arm.yml`](.github/workflows/benchmark-real-arm.yml) workflow — it
+builds llama.cpp, runs the agent fleet on **both Arm64 and x86-64**, and posts a head-to-head
+Arm-vs-x86 comparison. No cloud signup required.
 
 ## Project layout
 
@@ -128,13 +141,15 @@ src/armada/
   server.py    # llama.cpp server lifecycle + Arm-tuned flags
   runner.py    # concurrent fleet runner
   metrics.py   # metrics + cost model
+  compare.py   # cache/concurrency sweeps + Arm-vs-x86 comparison
   report.py    # JSON + Markdown report
   cli.py       # `armada` entry point
 ```
 
 ## Status
 
-Early scaffold. Mock-mode pipeline first; real llama.cpp serving + published Arm-vs-x86 results next.
+Mock-mode pipeline, cache/concurrency sweeps, and the Arm-vs-x86 comparison harness are working and
+tested. Real llama.cpp serving numbers come from the CI workflows next.
 
 ## License
 

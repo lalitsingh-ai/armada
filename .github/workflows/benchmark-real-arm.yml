@@ -1,9 +1,8 @@
-name: Real Arm64 benchmark
+name: Real Arm64 vs x86-64 benchmark
 
-# Runs the REAL (non-mock) Armada benchmark on a free GitHub-hosted Arm64 runner
-# (ubuntu-24.04-arm = 4 vCPU Cobalt 100, Arm Neoverse). It builds llama.cpp, downloads a small
-# tool-calling GGUF, serves it, and runs the agent fleet — producing genuine Arm numbers with
-# no cloud signup. Trigger it manually from the Actions tab ("Run workflow").
+# Builds llama.cpp and runs the REAL (non-mock) Armada agent fleet on BOTH a free Arm64 runner
+# (ubuntu-24.04-arm = 4 vCPU Cobalt 100, Arm Neoverse) and a free x86-64 runner, then compares
+# them head-to-head — genuine numbers, no cloud signup. Trigger it from the Actions tab.
 
 on:
   workflow_dispatch:
@@ -17,11 +16,28 @@ on:
       concurrency:
         description: "Agent fleet size (concurrent agents)"
         default: "3"
+      arm_usd_per_hour:
+        description: "Arm instance $/hour (0 = hide cost)"
+        default: "0"
+      x86_usd_per_hour:
+        description: "x86 instance $/hour (0 = hide cost)"
+        default: "0"
 
 jobs:
   real-bench:
-    runs-on: ubuntu-24.04-arm
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            label: "Arm64 Neoverse (Cobalt 100, 4 vCPU)"
+          - runner: ubuntu-24.04
+            arch: x86_64
+            label: "x86-64 (4 vCPU)"
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +54,7 @@ jobs:
       - name: Show detected CPU / Arm features
         run: armada info
 
-      - name: Build llama.cpp (KleidiAI on Arm)
+      - name: Build llama.cpp (KleidiAI on Arm, native on x86)
         run: ./scripts/build_llama_cpp.sh
 
       - name: Download model
@@ -48,24 +64,73 @@ jobs:
         run: ./scripts/download_model.sh
 
       - name: Run the real agent fleet benchmark
+        env:
+          ARM_USD: ${{ inputs.arm_usd_per_hour }}
+          X86_USD: ${{ inputs.x86_usd_per_hour }}
         run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then USD="$ARM_USD"; else USD="$X86_USD"; fi
           armada bench \
             --config configs/default.yaml \
             --set run.concurrency=${{ inputs.concurrency }} \
             --set server.parallel=${{ inputs.concurrency }} \
-            --set cost.instance_label="GitHub ubuntu-24.04-arm (Cobalt 100, 4 vCPU)" \
-            --out results/real-arm
+            --set cost.usd_per_hour="$USD" \
+            --set cost.instance_label="${{ matrix.label }}" \
+            --out results/real
 
       - name: Publish report to the job summary
         if: always()
         run: |
-          if [ -f results/real-arm/report.md ]; then
-            cat results/real-arm/report.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f results/real/report.md ]; then
+            cat results/real/report.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: armada-real-arm
-          path: results/real-arm
+          name: armada-real-${{ matrix.arch }}
+          path: results/real
+
+  compare:
+    name: Arm64 vs x86-64 comparison
+    needs: real-bench
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Armada
+        run: pip install -e .
+
+      - name: Download Arm results
+        uses: actions/download-artifact@v4
+        with:
+          name: armada-real-arm64
+          path: dl/arm
+
+      - name: Download x86 results
+        uses: actions/download-artifact@v4
+        with:
+          name: armada-real-x86_64
+          path: dl/x86
+
+      - name: Compare Arm64 vs x86-64
+        run: |
+          armada compare dl/arm/results.json dl/x86/results.json \
+            --labels "Arm64 (Neoverse),x86-64" \
+            --title "Real agent fleet — Arm64 vs x86-64" \
+            --out results/compare
+
+      - name: Publish comparison to the job summary
+        run: cat results/compare/compare.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: armada-arm-vs-x86
+          path: results/compare
+

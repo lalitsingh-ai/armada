@@ -12,6 +12,7 @@ from rich.console import Console
 
 from . import __version__
 from .client import LlamaCppClient, MockClient
+from .compare import make_variants, render_compare_console, write_compare
 from .config import Config
 from .cpuinfo import detect
 from .metrics import RunMetrics
@@ -58,6 +59,64 @@ def cmd_bench(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_variant(cfg: Config, mock: bool, sim_speed: float, cpu) -> RunMetrics:
+    """Run a single sweep leg, managing a real server when not in mock mode."""
+    if mock:
+        client = MockClient(prompt_cache=cfg.server.prompt_cache, sim_speed=sim_speed)
+        return asyncio.run(_run_and_close(cfg, client, cpu))
+    from .server import LlamaCppServer  # imported lazily so mock mode needs no server deps
+
+    with LlamaCppServer(cfg.server):
+        client = LlamaCppClient(cfg.server.base_url, cfg.server.startup_timeout_s)
+        return asyncio.run(_run_and_close(cfg, client, cpu))
+
+
+def cmd_sweep(args: argparse.Namespace) -> int:
+    cpu = detect()
+    variants = make_variants(args.kind)
+    out = args.out or _default_out(f"sweep-{args.kind}")
+    title = f"{args.kind} sweep — {cpu.summary()}"
+
+    console.print(
+        f"[bold]Armada[/bold] {__version__} — {args.kind} sweep "
+        f"({len(variants)} variants) on {cpu.summary()}"
+    )
+    if args.mock:
+        console.print("[yellow]mock mode[/yellow]: deterministic offline model (no server)")
+
+    items: list[tuple[str, dict]] = []
+    for v in variants:
+        cfg = Config.load(args.config, list(args.set) + v.overrides)
+        console.print(f"\n[bold cyan]» {v.label}[/bold cyan]  ({', '.join(v.overrides)})")
+        run = _run_variant(cfg, args.mock, args.sim_speed, cpu)
+        items.append((v.label, run.to_dict()))
+
+    out_path = write_compare(items, out, title=title)
+    console.print()
+    render_compare_console(items, console, title=f"{args.kind} sweep")
+    console.print(f"\n[green]wrote[/green] {out_path}/compare.json and {out_path}/compare.md")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    labels = [s.strip() for s in args.labels.split(",")] if args.labels else None
+    items: list[tuple[str, dict]] = []
+    for i, path in enumerate(args.paths):
+        data = load_results(path)
+        if labels and i < len(labels):
+            label = labels[i]
+        else:
+            label = str(data.get("platform") or Path(path).stem)
+        items.append((label, data))
+
+    title = args.title or "Comparison"
+    if args.out:
+        out_path = write_compare(items, args.out, title=title)
+        console.print(f"[green]wrote[/green] {out_path}/compare.json and {out_path}/compare.md\n")
+    render_compare_console(items, console, title=title)
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     data = load_results(args.path)
     render_dict_console(data, console)
@@ -91,6 +150,25 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--set", action="append", default=[], metavar="key.path=value",
                    help="override a config value (repeatable)")
     b.set_defaults(func=cmd_bench)
+
+    s = sub.add_parser("sweep", help="run cache/concurrency variants on this machine and compare")
+    s.add_argument("--config", default="configs/default.yaml", help="path to a YAML config")
+    s.add_argument("--kind", choices=["cache", "concurrency"], default="cache",
+                   help="which variants to sweep")
+    s.add_argument("--mock", action="store_true", help="use the deterministic offline model")
+    s.add_argument("--out", default=None,
+                   help="output directory (default: results/sweep-<kind>-<ts>)")
+    s.add_argument("--sim-speed", type=float, default=1.0, help="mock wall-time scale (0 = instant)")
+    s.add_argument("--set", action="append", default=[], metavar="key.path=value",
+                   help="override a config value applied to every variant (repeatable)")
+    s.set_defaults(func=cmd_sweep)
+
+    c = sub.add_parser("compare", help="compare saved result sets (e.g. Arm vs x86)")
+    c.add_argument("paths", nargs="+", help="results dirs or results.json files to compare")
+    c.add_argument("--labels", default=None, help="comma-separated labels, one per path")
+    c.add_argument("--title", default=None, help="comparison title")
+    c.add_argument("--out", default=None, help="also write compare.json/compare.md here")
+    c.set_defaults(func=cmd_compare)
 
     r = sub.add_parser("report", help="render a saved results directory or results.json")
     r.add_argument("path", help="results dir or results.json")

@@ -32,11 +32,16 @@ jobs:
       - name: Run the agent fleet benchmark (mock model)
         run: armada bench --config configs/default.yaml --mock --sim-speed 0.2 --out results/ci
 
-      - name: Publish report to the job summary
-        run: cat results/ci/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Cache on/off sweep (mock) — proves the optimization is measurable
+        run: armada sweep --kind cache --mock --sim-speed 0.2 --set cost.usd_per_hour=0.05 --out results/sweep
+
+      - name: Publish reports to the job summary
+        run: |
+          cat results/ci/report.md >> "$GITHUB_STEP_SUMMARY"
+          cat results/sweep/compare.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
           name: armada-results-${{ matrix.runner }}
-          path: results/ci
+          path: results
