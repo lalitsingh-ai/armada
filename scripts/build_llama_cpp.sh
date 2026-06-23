@@ -24,7 +24,21 @@ cmake -S "$DIR" -B "$DIR/build" \
   -DLLAMA_CURL=OFF \
   "${EXTRA_FLAGS[@]}"
 
-echo ">> building llama-server"
-cmake --build "$DIR/build" -j --target llama-server
+# Cap build parallelism. An unbounded `-j` makes `make` compile every heavy C++
+# translation unit (httplib, llama-adapter, ggml...) at once, each costing ~1-2 GB,
+# which exhausts RAM on CI runners and gets the compilers killed (SIGTERM, exit 143:
+# "No child processes"). Budget ~2 GB per job and never exceed the core count.
+JOBS="${BUILD_JOBS:-}"
+if [ -z "$JOBS" ]; then
+  CORES="$(nproc)"
+  MEM_GB="$(awk '/MemTotal/ {printf "%d", $2 / 1024 / 1024}' /proc/meminfo)"
+  MEM_JOBS=$(( MEM_GB / 2 ))
+  [ "$MEM_JOBS" -lt 1 ] && MEM_JOBS=1
+  JOBS="$CORES"
+  [ "$MEM_JOBS" -lt "$JOBS" ] && JOBS="$MEM_JOBS"
+fi
+
+echo ">> building llama-server with -j$JOBS (cores=$(nproc), mem-aware cap)"
+cmake --build "$DIR/build" -j "$JOBS" --target llama-server
 
 echo ">> done: $DIR/build/bin/llama-server"
