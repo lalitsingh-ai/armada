@@ -1,0 +1,42 @@
+name: Arm64 agent benchmark
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04-arm is a free Arm64 (Neoverse) runner for public repositories.
+        runner: [ubuntu-24.04-arm, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Armada
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Show detected CPU / Arm features
+        run: armada info
+
+      - name: Run the agent fleet benchmark (mock model)
+        run: armada bench --config configs/default.yaml --mock --sim-speed 0.2 --out results/ci
+
+      - name: Publish report to the job summary
+        run: cat results/ci/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: armada-results-${{ matrix.runner }}
+          path: results/ci

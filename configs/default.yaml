@@ -1,0 +1,37 @@
+# Armada default benchmark configuration.
+# Override any field on the CLI, e.g. `armada bench --set run.concurrency=16`.
+
+run:
+  name: default
+  concurrency: 8          # number of agents in flight at once (the "fleet" size)
+  repeats: 1              # repeat the whole task suite N times for more samples
+  latency_sla_s: 15.0     # an agent task slower than this counts against `sustained_agents`
+  seed: 1234              # determinism for task ordering / mock model
+
+cost:
+  # USD per hour for the instance under test. Set this per platform so Armada can
+  # compute cost_per_task / tasks_per_dollar. Leave at 0 to disable $ metrics.
+  usd_per_hour: 0.0
+  # Optional human label shown in the report (e.g. "Oracle A1 4 OCPU", "c7g.2xlarge").
+  instance_label: "unknown"
+
+server:
+  engine: llama.cpp
+  host: 127.0.0.1
+  port: 8080
+  model_path: models/model.gguf
+  threads: null           # null -> use all available cores (nproc)
+  parallel: 8             # llama.cpp parallel slots; keep >= run.concurrency
+  continuous_batching: true
+  prompt_cache: true      # reuse the KV prefix across agent steps (the key optimization)
+  ctx_size: 4096
+  startup_timeout_s: 120
+  extra_args: []          # any additional llama-server flags
+
+model:
+  name: qwen2.5-3b-instruct-q4_0
+  temperature: 0.0
+  max_tokens: 512
+
+tasks:
+  suite: default          # task suite name defined in armada/tasks.py
