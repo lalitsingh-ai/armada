@@ -1,0 +1,46 @@
+# Cloud instance cost presets for Armada's cost model.
+#
+# These feed `cost.usd_per_hour` and `cost.instance_label` so that `cost_per_task` and
+# `tasks_per_dollar` come out in real money. Use with:  armada bench --instance graviton4-c8g
+#
+# IMPORTANT: prices are *approximate* on-demand list prices and change constantly by region and
+# date. Treat them as editable defaults — confirm the current price for your region before quoting
+# any number in a submission. (Spot/preemptible pricing is typically far lower.)
+
+instances:
+  # --- Arm64 -----------------------------------------------------------------------------------
+  graviton4-c8g:
+    label: "AWS c8g.xlarge — Graviton4 (Neoverse V2), 4 vCPU"
+    arch: arm64
+    usd_per_hour: 0.1577
+
+  graviton3-c7g:
+    label: "AWS c7g.xlarge — Graviton3 (Neoverse V1), 4 vCPU"
+    arch: arm64
+    usd_per_hour: 0.1445
+
+  axion-c4a:
+    label: "GCP c4a-standard-4 — Axion (Neoverse V2), 4 vCPU"
+    arch: arm64
+    usd_per_hour: 0.1600
+
+  cobalt-d4ps:
+    label: "Azure D4ps v6 — Cobalt 100 (Neoverse N2), 4 vCPU"
+    arch: arm64
+    usd_per_hour: 0.1540
+
+  hetzner-cax31:
+    label: "Hetzner CAX31 — Ampere Altra (Neoverse N1), 8 vCPU"
+    arch: arm64
+    usd_per_hour: 0.0238
+
+  # --- x86-64 (baselines) ----------------------------------------------------------------------
+  intel-c7i:
+    label: "AWS c7i.xlarge — Intel Sapphire Rapids, 4 vCPU"
+    arch: x86_64
+    usd_per_hour: 0.1785
+
+  amd-c7a:
+    label: "AWS c7a.xlarge — AMD Genoa, 4 vCPU"
+    arch: x86_64
+    usd_per_hour: 0.2054

@@ -123,3 +123,20 @@ def _apply_override(cfg: Any, override: str) -> None:
     if not hasattr(target, leaf):
         raise ValueError(f"Unknown config key: {key}")
     setattr(target, leaf, _coerce(getattr(target, leaf), raw))
+
+
+def load_instance(name: str, path: str | Path = "configs/instances.yaml") -> tuple[str, float]:
+    """Look up a cloud instance preset, returning ``(label, usd_per_hour)``.
+
+    Presets live in ``configs/instances.yaml`` and feed the cost model so that cost-per-task and
+    tasks-per-dollar come out in real money.
+    """
+    with open(path, encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+    instances = data.get("instances", {})
+    if name not in instances:
+        known = ", ".join(sorted(instances)) or "(none)"
+        raise ValueError(f"Unknown instance '{name}'. Known presets: {known}")
+    entry = instances[name]
+    return str(entry["label"]), float(entry["usd_per_hour"])
+

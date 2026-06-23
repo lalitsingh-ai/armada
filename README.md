@@ -87,6 +87,9 @@ armada report results/mock
 # Sweep prefix-cache ON vs OFF and auto-generate the comparison + headline
 armada sweep --kind cache --mock --set cost.usd_per_hour=0.05 --out results/sweep
 
+# Price it on a real cloud instance (cost-per-task + tasks-per-dollar in real money)
+armada bench --mock --instance graviton4-c8g --out results/arm
+
 # Compare any two saved runs side by side (e.g. Arm vs x86)
 armada compare results/arm results/x86 --labels "Arm64,x86-64" --title "Arm vs x86"
 ```

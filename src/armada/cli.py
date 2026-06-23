@@ -13,7 +13,7 @@ from rich.console import Console
 from . import __version__
 from .client import LlamaCppClient, MockClient
 from .compare import make_variants, render_compare_console, write_compare
-from .config import Config
+from .config import Config, load_instance
 from .cpuinfo import detect
 from .metrics import RunMetrics
 from .report import load_results, render_console, render_dict_console, write_results
@@ -34,8 +34,17 @@ def _default_out(name: str) -> str:
     return str(Path("results") / f"{name}-{stamp}")
 
 
+def _instance_overrides(args: argparse.Namespace) -> list[str]:
+    """Turn ``--instance NAME`` into cost overrides (applied before explicit ``--set``)."""
+    name = getattr(args, "instance", None)
+    if not name:
+        return []
+    label, price = load_instance(name, getattr(args, "instances_file", "configs/instances.yaml"))
+    return [f"cost.usd_per_hour={price}", f"cost.instance_label={label}"]
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
-    cfg = Config.load(args.config, args.set)
+    cfg = Config.load(args.config, _instance_overrides(args) + args.set)
     cpu = detect()
     out = args.out or _default_out(cfg.run.name)
 
@@ -84,9 +93,10 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     if args.mock:
         console.print("[yellow]mock mode[/yellow]: deterministic offline model (no server)")
 
+    base_overrides = _instance_overrides(args) + list(args.set)
     items: list[tuple[str, dict]] = []
     for v in variants:
-        cfg = Config.load(args.config, list(args.set) + v.overrides)
+        cfg = Config.load(args.config, base_overrides + v.overrides)
         console.print(f"\n[bold cyan]» {v.label}[/bold cyan]  ({', '.join(v.overrides)})")
         run = _run_variant(cfg, args.mock, args.sim_speed, cpu)
         items.append((v.label, run.to_dict()))
@@ -147,6 +157,10 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--mock", action="store_true", help="use the deterministic offline model")
     b.add_argument("--out", default=None, help="output directory (default: results/<name>-<ts>)")
     b.add_argument("--sim-speed", type=float, default=1.0, help="mock wall-time scale (0 = instant)")
+    b.add_argument("--instance", default=None,
+                   help="cost preset from configs/instances.yaml (e.g. graviton4-c8g)")
+    b.add_argument("--instances-file", default="configs/instances.yaml",
+                   help="path to the instance preset registry")
     b.add_argument("--set", action="append", default=[], metavar="key.path=value",
                    help="override a config value (repeatable)")
     b.set_defaults(func=cmd_bench)
@@ -159,6 +173,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", default=None,
                    help="output directory (default: results/sweep-<kind>-<ts>)")
     s.add_argument("--sim-speed", type=float, default=1.0, help="mock wall-time scale (0 = instant)")
+    s.add_argument("--instance", default=None,
+                   help="cost preset from configs/instances.yaml (e.g. graviton4-c8g)")
+    s.add_argument("--instances-file", default="configs/instances.yaml",
+                   help="path to the instance preset registry")
     s.add_argument("--set", action="append", default=[], metavar="key.path=value",
                    help="override a config value applied to every variant (repeatable)")
     s.set_defaults(func=cmd_sweep)
