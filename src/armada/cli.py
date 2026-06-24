@@ -16,7 +16,7 @@ from .compare import make_variants, render_compare_console, write_compare
 from .config import Config, load_instance
 from .cpuinfo import detect
 from .metrics import RunMetrics
-from .report import load_results, render_console, render_dict_console, write_results
+from .report import load_results, render_console, render_dict_console, render_html, write_results
 from .runner import run_benchmark
 
 console = Console()
@@ -64,7 +64,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
     out_path = write_results(run, out)
     render_console(run, console)
-    console.print(f"\n[green]wrote[/green] {out_path}/results.json and {out_path}/report.md")
+    console.print(f"\n[green]wrote[/green] {out_path}/results.json, report.md and report.html")
     return 0
 
 
@@ -104,7 +104,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     out_path = write_compare(items, out, title=title)
     console.print()
     render_compare_console(items, console, title=f"{args.kind} sweep")
-    console.print(f"\n[green]wrote[/green] {out_path}/compare.json and {out_path}/compare.md")
+    console.print(f"\n[green]wrote[/green] {out_path}/compare.json, compare.md, compare.svg and compare.html")
     return 0
 
 
@@ -122,7 +122,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
     title = args.title or "Comparison"
     if args.out:
         out_path = write_compare(items, args.out, title=title)
-        console.print(f"[green]wrote[/green] {out_path}/compare.json and {out_path}/compare.md\n")
+        console.print(f"[green]wrote[/green] {out_path}/compare.json, compare.md, compare.svg and compare.html\n")
     render_compare_console(items, console, title=title)
     return 0
 
@@ -130,6 +130,11 @@ def cmd_compare(args: argparse.Namespace) -> int:
 def cmd_report(args: argparse.Namespace) -> int:
     data = load_results(args.path)
     render_dict_console(data, console)
+    if args.html:
+        src = Path(args.path)
+        target = (src / "report.html") if src.is_dir() else src.with_name("report.html")
+        target.write_text(render_html(data), encoding="utf-8")
+        console.print(f"\n[green]wrote[/green] {target}")
     return 0
 
 
@@ -190,6 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("report", help="render a saved results directory or results.json")
     r.add_argument("path", help="results dir or results.json")
+    r.add_argument("--html", action="store_true",
+                   help="also write a self-contained report.html next to the results")
     r.set_defaults(func=cmd_report)
 
     i = sub.add_parser("info", help="show detected CPU/Arm features and server binary")
