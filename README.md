@@ -145,7 +145,8 @@ For the **Arm-vs-x86 headline**, repeat steps 0–4 on an x86 box
 ```bash
 armada compare results/arm/results.json results/x86/results.json \
   --labels "Arm64 (Neoverse),x86-64" --out results/compare
-# -> results/compare/compare.md (table + charts) and compare.svg
+# -> compare.md (table + charts), compare.svg, and a self-contained
+#    compare.html you can open offline or screenshot for a deck
 ```
 
 ## Reproduce it for free in CI

@@ -3,6 +3,7 @@ import asyncio
 from armada.client import MockClient
 from armada.compare import (
     make_variants,
+    render_compare_html,
     render_compare_markdown,
     render_compare_mermaid,
     render_compare_svg,
@@ -68,6 +69,7 @@ def test_write_compare_emits_files(tmp_path):
     assert (out / "compare.json").is_file()
     assert (out / "compare.md").is_file()
     assert (out / "compare.svg").is_file()
+    assert (out / "compare.html").is_file()
 
     import json
 
@@ -93,3 +95,20 @@ def test_svg_chart_is_wellformed():
     assert "<rect" in svg
     # the winning bar is highlighted green
     assert "#2da44e" in svg
+
+
+def test_html_report_is_self_contained():
+    html = render_compare_html(_sweep("cache"), title="cache sweep")
+    # a complete HTML document
+    assert html.startswith("<!doctype html>") and html.strip().endswith("</html>")
+    # the table and both variants are present
+    assert "<table" in html and "</table>" in html
+    assert "cache-on" in html and "cache-off" in html
+    # the headline and the charts are inlined (SVG, not <img src>)
+    assert "the throughput" in html
+    assert "<svg" in html
+    # genuinely self-contained: no external scripts, styles, or fetched assets
+    assert "<script" not in html
+    assert "<link" not in html
+    assert "src=" not in html
+    assert "https://" not in html
