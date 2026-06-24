@@ -5,6 +5,14 @@ set -euo pipefail
 
 REPO="${LLAMA_CPP_REPO:-https://github.com/ggml-org/llama.cpp}"
 DIR="${LLAMA_CPP_DIR:-llama.cpp}"
+TARGET="$DIR/build/bin/llama-server"
+
+# Fast path: a restored CI cache (or an earlier local build) already has the binary,
+# so there is nothing to rebuild. Set FORCE_BUILD=1 to force a fresh build.
+if [ -x "$TARGET" ] && [ "${FORCE_BUILD:-0}" != "1" ]; then
+  echo ">> llama-server already built at $TARGET — skipping build (FORCE_BUILD=1 to rebuild)"
+  exit 0
+fi
 
 if [ ! -d "$DIR" ]; then
   echo ">> cloning $REPO"
@@ -41,4 +49,4 @@ fi
 echo ">> building llama-server with -j$JOBS (cores=$(nproc), mem-aware cap)"
 cmake --build "$DIR/build" -j "$JOBS" --target llama-server
 
-echo ">> done: $DIR/build/bin/llama-server"
+echo ">> done: $TARGET"

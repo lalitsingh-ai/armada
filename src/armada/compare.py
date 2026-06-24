@@ -61,6 +61,7 @@ def _pct(value: object) -> str:
 # Column header -> formatter over a result dict. Order defines the table layout.
 _COLUMNS: list[tuple[str, object]] = [
     ("tasks/s", lambda d: _fmt_num(d.get("tasks_per_sec"))),
+    ("success", lambda d: _pct(d.get("success_rate"))),
     ("gen tok/s", lambda d: _fmt_num(d.get("gen_tokens_per_sec"), 1)),
     ("cache hit", lambda d: _pct(d.get("cache_hit_ratio"))),
     ("p95 (s)", lambda d: _fmt_num(d.get("p95_task_latency_s"))),

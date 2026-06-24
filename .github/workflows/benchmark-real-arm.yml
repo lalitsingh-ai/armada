@@ -16,6 +16,9 @@ on:
       concurrency:
         description: "Agent fleet size (concurrent agents)"
         default: "3"
+      repeats:
+        description: "Repeat the task suite N times (more samples -> stabler numbers)"
+        default: "3"
       arm_usd_per_hour:
         description: "Arm instance $/hour (0 = hide cost)"
         default: "0"
@@ -54,8 +57,22 @@ jobs:
       - name: Show detected CPU / Arm features
         run: armada info
 
+      - name: Restore llama.cpp build cache
+        id: llama_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: llama.cpp/build
+          key: llamacpp-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama_cpp.sh') }}-v1
+
       - name: Build llama.cpp (KleidiAI on Arm, native on x86)
         run: ./scripts/build_llama_cpp.sh
+
+      - name: Save llama.cpp build cache
+        if: steps.llama_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llama.cpp/build
+          key: llamacpp-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama_cpp.sh') }}-v1
 
       - name: Download model
         env:
@@ -73,6 +90,7 @@ jobs:
             --config configs/default.yaml \
             --set run.concurrency=${{ inputs.concurrency }} \
             --set server.parallel=${{ inputs.concurrency }} \
+            --set run.repeats=${{ inputs.repeats }} \
             --set cost.usd_per_hour="$USD" \
             --set cost.instance_label="${{ matrix.label }}" \
             --out results/real
